@@ -2,6 +2,8 @@
 #include "stm32f10x.h"                  // Device header
 #include "Delay.h"
 #include "OLED.h"
+#include "MPU6050.h"
+#include <stdio.h>
 
 void class2_1(){
 	//寄存器操作:需要查阅手册，对寄存器数据进行人工计算
@@ -214,32 +216,95 @@ void Bluetooth_SendString(const char *text)
     }
 }
 
+
+/* MPU6050 demo: replace only the original main(), keep existing helpers. */
 int main(void)
 {
-	//class2_1();
-	//class3_2_1_SingleLight();
-	//class3_2_1_MultipleLight();
-	//class4_2_OLEDInit();
-	uint16_t value;
+    uint16_t value;
+    uint8_t id = 0;
+    uint8_t ready = 0;
+    uint8_t rows = 0;
+    MPU6050_Status status;
+    MPU6050_Raw motion;
+    char message[80];
 
     OLED_Init();
     FSR_Init();
-	Bluetooth_Init();
-
-    /* 固定文字只需要显示一次 */
+    Bluetooth_Init();
     OLED_ShowString(1, 1, "FSR ADC:");
-	//OLED_ShowString(1, 1, "Hello");
-	while(1)
-	{
-		//class3_2_1_SingleLightTwinkle()
-		//class3_2_1_MultipleLightTwinkle();
-		/* 第2行、第1列，显示4位数字 */
-		value=FSR_Read();
-        OLED_ShowNum(2, 1, value, 4);
-		
-		Bluetooth_SendString("hello1\r\n");
 
-        /* 每50毫秒更新一次，即每秒约20次 */
-        Delay_ms(500);
-	}
+    while (1)
+    {
+        value = FSR_Read();
+        OLED_ShowNum(1, 9, value, 4);
+
+        if (!ready)
+        {
+            status = MPU6050_Init(&id);
+            if (status != MPU6050_OK)
+            {
+                if (status == MPU6050_ID_ERROR)
+                {
+                    sprintf(message, "ERR: WHO_AM_I=0x%02X, expected 0x68 or 0x70\r\n", (unsigned int)id);
+                    OLED_ShowString(2, 1, "MPU ID mismatch ");
+                }
+                else if (status == MPU6050_CONFIG_ERROR)
+                {
+                    Bluetooth_SendString("ERR: MPU config readback mismatch\r\n");
+                    OLED_ShowString(2, 1, "MPU config error");
+                    Delay_ms(1000);
+                    continue;
+                }
+                else
+                {
+                    sprintf(message, "ERR: MPU6050 I2C, check power/GND/PB10/PB11/AD0\r\n");
+                    OLED_ShowString(2, 1, "MPU I2C ERROR   ");
+                }
+                Bluetooth_SendString(message);
+                OLED_ShowString(3, 1, "Check wiring    ");
+                OLED_ShowString(4, 1, "Retry in 1s     ");
+                Delay_ms(1000);
+                continue;
+            }
+            ready = 1;
+            rows = 0;
+        }
+
+        if (MPU6050_ReadRaw(&motion) != MPU6050_OK)
+        {
+            Bluetooth_SendString("ERR: MPU6050 read failed\r\n");
+            OLED_ShowString(2, 1, "MPU read failed ");
+            ready = 0;
+            Delay_ms(500);
+            continue;
+        }
+
+        
+        if (rows == 0)
+        {
+            sprintf(message, "%s ID: 0x%02X\r\n",
+                    id == MPU6500_DEVICE_ID ? "MPU6500" : "MPU6050", (unsigned int)id);
+            Bluetooth_SendString(message);
+            Bluetooth_SendString("ax,ay,az,gx,gy,gz\r\n");
+        }
+        sprintf(message, "%d,%d,%d,%d,%d,%d\r\n",
+                (int)motion.ax, (int)motion.ay, (int)motion.az,
+                (int)motion.gx, (int)motion.gy, (int)motion.gz);
+        Bluetooth_SendString(message);
+        rows = (uint8_t)((rows + 1u) % 10u);
+
+        
+        sprintf(message, "AX:%6d       ", (int)motion.ax);
+        OLED_ShowString(2, 1, message);
+        sprintf(message, "AY:%6d       ", (int)motion.ay);
+        OLED_ShowString(3, 1, message);
+        sprintf(message, "AZ:%6d       ", (int)motion.az);
+        OLED_ShowString(4, 1, message);
+
+        
+		
+		/*Bluetooth_SendString("hello1\r\n");
+        Delay_ms(500);*/
+        Delay_ms(100);
+    }
 }

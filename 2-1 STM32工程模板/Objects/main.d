@@ -30,3 +30,5 @@
 .\objects\main.o: .\library\misc.h
 .\objects\main.o: .\system\Delay.h
 .\objects\main.o: .\hardware\OLED.h
+.\objects\main.o: .\hardware\MPU6050.h
+.\objects\main.o: E:\_program_IDE\STM32\ARM\ARMCC\Bin\..\include\stdio.h
